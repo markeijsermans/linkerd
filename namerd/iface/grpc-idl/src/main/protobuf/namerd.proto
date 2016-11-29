@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package io.buoyant.namerd;
+
+option java_outer_classname = "NamerdGrpc";
+
+import "dtab.proto";
+
+/**
+ * A read-only interface (i.e. for interpreters in linkerd).
+ */
+service ReadSvc {
+
+  rpc Parse (ParseReq) returns (ParseRsp) {}
+  
+  // rpc GetDtab (DtabReq) returns (DtabRsp) {}
+  // rpc StreamDtab (DtabReq) returns (stream DtabRsp) {}
+
+  // rpc GetBoundTree (BindReq) returns (BoundTreeRsp) {}
+  // rpc StreamBoundTree (BindReq) returns (stream BoundTreeRsp) {}
+
+  // rpc GetAddr (AddrReq) returns (AddrRsp) {}
+  // rpc StreamAddr (AddrReq) returns (stream AddrRsp) {}
+
+  // rpc GetExplainedTree (ExplainTreeReq) returns (ExplainTreeRsp) {}
+  // rpc StreamExplainedTree (ExplainTreeReq) returns (stream ExplainTreeRsp) {}
+
+  // TODO GetNsList 
+  // TODO StreamNsList 
+}
+
+/*
+ * Parse -- parsing a DTAB from a string
+ */
+
+message ParseReq {
+  string text = 1;
+}
+
+message ParseRsp {
+
+  message Error {
+    string description = 1;
+
+    /** Offsets in bytes, if known. */
+    uint32 location = 2;
+  }
+
+  oneof result {
+    io.buoyant.dtab.Dtab dtab = 1;
+    Error error = 2;
+  }
+}
+
+/*
+ * GetDtab, StreamDtab
+ */
+
+// message DtabReq {
+//   string label = 1;
+// }
+
+// message DtabRsp {
+//   oneof result {
+//     Dtab dtab = 1;
+//   }
+// }
+
+//TODO
+// service Controller {
+// }
