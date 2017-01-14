@@ -6,7 +6,7 @@ import com.twitter.finagle.buoyant.h2
 import com.twitter.io.Buf
 import com.twitter.util.{Future, Return, Throw, Try}
 import io.buoyant.dtab._
-import io.buoyant.glomgold.runtime.ServerDispatcher
+import io.buoyant.grpc.runtime.ServerDispatcher
 import java.nio.ByteBuffer
 import scala.collection.JavaConverters._
 
@@ -26,14 +26,13 @@ object ReadSvc {
 
     private[this] val mkParseRsp: Try[FDtab] => Future[NamerdGrpc.ParseRsp] = {
       case Return(dtab) =>
-        val d = NamerdGrpc.ParseRsp.OneofResult.Dtab(mkDtab(dtab))
-        val r = NamerdGrpc.ParseRsp(Some(d))
-        Future.value(r)
+        val result = NamerdGrpc.ParseRsp.OneofResult.Dtab(mkDtab(dtab))
+        Future.value(NamerdGrpc.ParseRsp(Some(result)))
 
       case Throw(exc) =>
-        val e = NamerdGrpc.ParseRsp.OneofResult.Error(NamerdGrpc.ParseRsp.Error(Option(exc.getMessage), None))
-        val r = NamerdGrpc.ParseRsp(Some(e))
-        Future.value(r)
+        val e = NamerdGrpc.ParseRsp.Error(Option(exc.getMessage), None)
+        val result = NamerdGrpc.ParseRsp.OneofResult.Error(e)
+        Future.value(NamerdGrpc.ParseRsp(Some(result)))
     }
   }
 

@@ -9,6 +9,7 @@ import scoverage.ScoverageKeys._
 
 object LinkerdBuild extends Base {
   import Base._
+  import Grpc._
 
   val Bundle = config("bundle")
   val Dcos = config("dcos") extend Bundle
@@ -231,32 +232,19 @@ object LinkerdBuild extends Base {
         .settings(coverageExcludedPackages := ".*thriftscala.*")
 
       val interpreterThrift = projectDir("namerd/iface/interpreter-thrift")
-        .dependsOn(core)
-        .dependsOn(interpreterThriftIdl)
+        .dependsOn(core, interpreterThriftIdl)
         .withLib(Deps.guava)
         .withTwitterLibs(Deps.finagle("thrift"), Deps.finagle("thriftmux"))
         .withTests()
 
-      val grpcIdl = projectDir("namerd/iface/grpc-idl")
-        .withLib("io.buoyant" %% "glomgold-runtime" % "0.0.0")
-        .withTwitterLib(Deps.twitterUtil("core"))
-        .settings(protobufSettings ++ inConfig(protobufConfig)(Seq(
-          version := "3.1.0",
-          javaSource <<= (javaSource in Compile),
-          scalaSource := ((sourceManaged in Compile).value / "compiled_protobuf"),
-          generatedTargets := Seq(scalaSource.value -> "*.scala"),
-          protocOptions := {
-            val dir = scalaSource.value.getCanonicalPath
-            s"--glomgold_out=plugins=grpc:${dir}" :: Nil
-          }
-        )))
-
       val grpc = projectDir("namerd/iface/grpc")
-        .dependsOn(core)
-        .dependsOn(grpcIdl)
-        .dependsOn(Router.h2)
+        .dependsOn(core, Grpc.runtime)
+        .withGrpc
 
-      val all = aggregateDir("namerd/iface", controlHttp, interpreterThriftIdl, interpreterThrift, grpcIdl, grpc)
+      val all = aggregateDir(
+        "namerd/iface",
+        controlHttp, interpreterThriftIdl, interpreterThrift, grpc
+      )
     }
 
     val main = projectDir("namerd/main")
@@ -630,7 +618,6 @@ object LinkerdBuild extends Base {
   val namerdIfaceControlHttp = Namerd.Iface.controlHttp
   val namerdIfaceInterpreterThriftIdl = Namerd.Iface.interpreterThriftIdl
   val namerdIfaceInterpreterThrift = Namerd.Iface.interpreterThrift
-  val namerdIfaceGrpcIdl = Namerd.Iface.grpcIdl
   val namerdIfaceGrpc = Namerd.Iface.grpc
   val namerdStorageEtcd = Namerd.Storage.etcd
   val namerdStorageInMemory = Namerd.Storage.inMemory
