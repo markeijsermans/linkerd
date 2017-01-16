@@ -11,5 +11,6 @@ namers:
     rootDir: namerd/examples/disco
 
 interfaces:
+  - kind: io.l5d.httpController
   - kind: io.l5d.namerd.grpc
     port: 4321

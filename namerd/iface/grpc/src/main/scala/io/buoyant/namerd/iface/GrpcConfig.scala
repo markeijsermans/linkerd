@@ -1,4 +1,5 @@
-package io.buoyant.namerd.iface
+package io.buoyant.namerd
+package iface
 
 import com.fasterxml.jackson.annotation.JsonIgnore
 import com.twitter.finagle.{Path, Namer, Service, Stack}
@@ -7,7 +8,7 @@ import com.twitter.finagle.naming.NameInterpreter
 import com.twitter.finagle.stats.StatsReceiver
 import com.twitter.util.Duration
 import com.twitter.util.TimeConversions._
-import io.buoyant.namerd._
+import io.buoyant.grpc.runtime.ServerDispatcher
 import java.net.InetSocketAddress
 
 class GrpcConfig extends InterfaceConfig {
@@ -21,7 +22,11 @@ class GrpcConfig extends InterfaceConfig {
     stats: StatsReceiver
   ): Servable = new Servable {
     def kind = GrpcConfig.kind
-    def serve() = H2.serve(addr, ReadSvc.mk())
+    def serve() = {
+      val interpreter = GrpcInterpreter.mk(store, namers, stats)
+      // val controller = GrpcController.mk(store)
+      H2.serve(addr, ServerDispatcher(interpreter))
+    }
   }
 }
 

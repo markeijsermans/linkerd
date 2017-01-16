@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package io.buoyant.dtab;
+package io.buoyant.proto;
 
 message Path {
   repeated bytes elems = 1;

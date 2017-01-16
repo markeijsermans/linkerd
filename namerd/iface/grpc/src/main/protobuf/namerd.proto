@@ -1,20 +1,18 @@
 syntax = "proto3";
 
-package io.buoyant.namerd;
-
-option java_outer_classname = "NamerdGrpc";
+package io.buoyant.proto.namerd;
 
 import "dtab.proto";
 
 /**
  * A read-only interface (i.e. for interpreters in linkerd).
  */
-service ReadSvc {
+service Interpreter {
 
   rpc Parse (ParseReq) returns (ParseRsp) {}
   
-  // rpc GetDtab (DtabReq) returns (DtabRsp) {}
-  // rpc StreamDtab (DtabReq) returns (stream DtabRsp) {}
+  rpc GetDtab (DtabReq) returns (DtabRsp) {}
+  rpc StreamDtab (DtabReq) returns (stream DtabRsp) {}
 
   // rpc GetBoundTree (BindReq) returns (BoundTreeRsp) {}
   // rpc StreamBoundTree (BindReq) returns (stream BoundTreeRsp) {}
@@ -47,7 +45,7 @@ message ParseRsp {
   }
 
   oneof result {
-    io.buoyant.dtab.Dtab dtab = 1;
+    io.buoyant.proto.Dtab dtab = 1;
     Error error = 2;
   }
 }
@@ -56,15 +54,37 @@ message ParseRsp {
  * GetDtab, StreamDtab
  */
 
-// message DtabReq {
-//   string label = 1;
-// }
+message DtabReq {
+  string ns = 1;
+}
 
-// message DtabRsp {
-//   oneof result {
-//     Dtab dtab = 1;
-//   }
-// }
+message VersionedDtab {
+  message Version {
+    bytes stamp = 1;
+  }
+
+  Version version = 1;
+  io.buoyant.proto.Dtab dtab = 2;
+}
+
+message DtabRsp {
+
+  message Error {
+    enum Code {
+      UNKNOWN = 0;
+      NOT_FOUND = 1;
+      BAD_REQUEST = 2;
+    }
+
+    string description = 1;
+    Code code = 2;
+  }
+
+  oneof result {
+    VersionedDtab dtab = 1;
+    Error error = 2;
+  }
+}
 
 //TODO
 // service Controller {
