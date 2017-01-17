@@ -14,8 +14,8 @@ service Interpreter {
   rpc GetDtab (DtabReq) returns (DtabRsp) {}
   rpc StreamDtab (DtabReq) returns (stream DtabRsp) {}
 
-  // rpc GetBoundTree (BindReq) returns (BoundTreeRsp) {}
-  // rpc StreamBoundTree (BindReq) returns (stream BoundTreeRsp) {}
+  rpc GetBoundTree (BindReq) returns (BoundTreeRsp) {}
+  rpc StreamBoundTree (BindReq) returns (stream BoundTreeRsp) {}
 
   // rpc GetAddr (AddrReq) returns (AddrRsp) {}
   // rpc StreamAddr (AddrReq) returns (stream AddrRsp) {}
@@ -82,6 +82,35 @@ message DtabRsp {
 
   oneof result {
     VersionedDtab dtab = 1;
+    Error error = 2;
+  }
+}
+
+/*
+ * GetBoundTree, StreamBoundTree
+ */
+
+message BindReq {
+  string ns = 1;
+  Path name = 2;
+  Dtab dtab = 3;
+}
+
+message BoundTreeRsp {
+
+  message Error {
+    enum Code {
+      UNKNOWN = 0;
+      NOT_FOUND = 1;
+      BAD_REQUEST = 2;
+    }
+
+    string description = 1;
+    Code code = 2;
+  }
+
+  oneof result {
+    BoundNameTree tree = 1;
     Error error = 2;
   }
 }

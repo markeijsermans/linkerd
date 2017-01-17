@@ -74,6 +74,37 @@ object GrpcInterpreter {
           EventStream(events)
       }
     }
+
+    override def getBoundTree(req: BindReq): Future[BoundTreeRsp] =
+      req.ns match {
+        case None => Future.value(BoundTreeRspNoNamespaceError)
+        case Some(ns) =>
+          req.name match {
+            case None => Future.value(BoundTreeRspEmptyNameError)
+            case Some(n) =>
+              mkFPath(n) match {
+                case Path.empty => Future.value(BoundTreeRspEmptyNameError)
+                case name =>
+                  val dtab = req.dtab match {
+                    case None => FDtab.empty
+                    case Some(d) => mkDtab(d)
+                  }
+                  val interpreter = mkInterpeter(ns)
+                  interpreter.bind(dtab, )
+
+              }
+          }
+      }
+
+    override def streamBoundTree(req: BindReq): Stream[BoundTreeRsp] = ???
+
+    private[this] def mkInterpeter(ns: String) =
+      ConfiguredDtabNamer(store.observe(ns).map(extractDtab), namers.toSeq)
+  }
+
+  private[this] val extractDtab: Option[VDtab] => FDtab = {
+    case None => FDtab.empty
+    case Some(VDtab(_, dtab)) => dtab
   }
 
   private[this] val WildcardElem =
@@ -91,6 +122,8 @@ object GrpcInterpreter {
     })
 
   private def mkPath(path: FPath): Path = Path(path.elems)
+
+  private def mkFPath(path: Path): FPath = ???
 
   private[this] val Neg = PathNameTree(Some(PathNameTree.OneofNode.Nop(PathNameTree.Nop.NEG)))
   private[this] val Fail = PathNameTree(Some(PathNameTree.OneofNode.Nop(PathNameTree.Nop.FAIL)))
@@ -119,6 +152,8 @@ object GrpcInterpreter {
       case Dentry(pfx, dst) => Dtab.Dentry(Some(mkPrefix(pfx)), Some(mkPathNameTree(dst)))
     })
 
+  private[this] def mkFDtab(dtab: Dtab): FDtab = ???
+
   private[this] def mkVersionedDtab(vdtab: VDtab): VersionedDtab = {
     val v = VersionedDtab.Version(Some(vdtab.version))
     val d = mkDtab(vdtab.dtab)
@@ -135,5 +170,13 @@ object GrpcInterpreter {
 
   private[this] val DtabRspNotFound =
     DtabRspError("Namespace not found", DtabRsp.Error.Code.NOT_FOUND)
+
+  private[this] val BoundTreeRspError(desc: String, code: BoundTreeRsp.Error.Code.Value) = {
+    val error = BoundTreeRsp.Error(Some(desc), Some(code))
+    BoundTreeRsp(Some(BoundTereRsp.OneofResult.Error(error)))
+  }
+
+  private[this] val BoundTreeEmptyNameError =
+    BoundTreeRsp("No name given", BoundTreeRsp.Error.Code.BAD_REQUEST)
 
 }
