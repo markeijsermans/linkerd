@@ -7,7 +7,7 @@ import com.twitter.finagle.buoyant.h2
 import com.twitter.finagle.stats.StatsReceiver
 import com.twitter.io.Buf
 import com.twitter.util.{Activity, Closable, Event, Future, Return, Promise, Throw, Try}
-import io.buoyant.grpc.runtime.Stream
+import io.buoyant.grpc.runtime.{Stream, EventStream}
 import io.buoyant.namerd.{VersionedDtab => VDtab}
 import io.buoyant.proto._
 import io.buoyant.proto.namerd._
@@ -64,15 +64,14 @@ object GrpcInterpreter {
           stream
 
         case Some(ns) =>
-          Stream.fromEvent(store.observe(ns).values.map {
-            case Throw(exc) =>
-              //Return(DtabRspError(exc.getMessage, DtabRsp.Error.Code.UNKNOWN))
-              Throw(exc)
-            case Return(None) =>
-              Return(DtabRspNotFound)
+          val events: Event[EventStream.Ev[DtabRsp]] = store.observe(ns).values.map {
+            case Throw(exc) => EventStream.Eos(Throw(exc))
+            case Return(None) => EventStream.Val(DtabRspNotFound)
             case Return(Some(vdtab)) =>
-              Return(DtabRsp(Some(DtabRsp.OneofResult.Dtab(mkVersionedDtab(vdtab)))))
-          })
+              val rsp = DtabRsp(Some(DtabRsp.OneofResult.Dtab(mkVersionedDtab(vdtab))))
+              EventStream.Val(rsp)
+          }
+          EventStream(events)
       }
     }
   }
