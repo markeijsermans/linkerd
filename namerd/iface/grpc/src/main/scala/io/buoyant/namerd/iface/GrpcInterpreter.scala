@@ -65,7 +65,7 @@ object GrpcInterpreter {
 
         case Some(ns) =>
           val events: Event[EventStream.Ev[DtabRsp]] = store.observe(ns).values.map {
-            case Throw(exc) => EventStream.Eos(Throw(exc))
+            case Throw(exc) => EventStream.End(Throw(exc))
             case Return(None) => EventStream.Val(DtabRspNotFound)
             case Return(Some(vdtab)) =>
               val rsp = DtabRsp(Some(DtabRsp.OneofResult.Dtab(mkVersionedDtab(vdtab))))
