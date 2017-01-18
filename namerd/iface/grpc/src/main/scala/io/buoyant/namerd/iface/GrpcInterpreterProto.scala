@@ -2,16 +2,13 @@ package io.buoyant.namerd
 package iface
 
 import com.twitter.finagle.{Addr, Address, Dentry, Dtab, Name, Namer, NameTree, Path}
-import com.twitter.finagle.buoyant.h2
-import com.twitter.finagle.stats.StatsReceiver
 import com.twitter.io.Buf
-import com.twitter.util.{Activity, Closable, Event, Future, Return, Promise, Throw, Try, Var}
+import com.twitter.util.{Closable, Future, Return, Throw, Try, Var}
 import io.buoyant.grpc.runtime.{Stream, EventStream}
 import io.buoyant.namer.Metadata
 import io.buoyant.proto.{Dtab => ProtoDtab, Path => ProtoPath, _}
 import io.buoyant.proto.namerd.{Addr => ProtoAddr, VersionedDtab => ProtoVersionedDtab, _}
 import java.net.Inet6Address
-import scala.collection.JavaConverters._
 
 /**
  * Utilities for translating between io.buoyant.proto and

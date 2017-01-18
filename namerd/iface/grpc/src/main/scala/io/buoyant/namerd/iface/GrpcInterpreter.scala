@@ -5,11 +5,10 @@ import com.twitter.concurrent.AsyncQueue
 import com.twitter.finagle.{Addr, Dtab, Namer, NameTree, Path}
 import com.twitter.finagle.stats.StatsReceiver
 import com.twitter.io.Buf
-import com.twitter.util.{Activity, Closable, Event, Future, Return, Promise, Throw, Try, Var}
+import com.twitter.util.{Activity, Future, Return, Throw, Try, Var}
 import io.buoyant.grpc.runtime.{Stream, EventStream}
 import io.buoyant.namer.ConfiguredDtabNamer
 import io.buoyant.proto.namerd.{Addr => ProtoAddr, VersionedDtab => ProtoVersionedDtab, _}
-import scala.collection.JavaConverters._
 
 object GrpcInterpreter {
   import GrpcInterpreterProto._
@@ -95,7 +94,7 @@ object GrpcInterpreter {
       case Some(pid) => EventStream(bindAddr(fromProtoPath(pid)).map(toProtoAddrEv))
     }
 
-    private[this] def bindAddr(id: Path) = {
+    private[this] def bindAddr(id: Path): Var[Addr] = {
       val (pfx, namer) = namers
         .find { case (pfx, _) => id.startsWith(pfx) }
         .getOrElse(DefaultNamer)
