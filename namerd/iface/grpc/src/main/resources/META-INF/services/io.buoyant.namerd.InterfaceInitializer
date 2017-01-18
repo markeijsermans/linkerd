@@ -1,1 +1,1 @@
-io.buoyant.namerd.iface.GrpcInitializer
+io.buoyant.namerd.iface.GrpcServerInitializer
