@@ -17,10 +17,10 @@ import scala.collection.JavaConverters._
 
 object GrpcInterpreter {
 
-  def mk(store: DtabStore, namers: Map[Path, Namer], stats: StatsReceiver): Interpreter.Server =
-    new Interpreter.Server(Iface(store, namers, stats))
+  def server(store: DtabStore, namers: Map[Path, Namer], stats: StatsReceiver): Interpreter.Server =
+    new Interpreter.Server(ServerIface(store, namers, stats))
 
-  case class Iface(store: DtabStore, namers: Map[Path, Namer], stats: StatsReceiver)
+  case class ServerIface(store: DtabStore, namers: Map[Path, Namer], stats: StatsReceiver)
     extends Interpreter {
 
     override def parse(req: ParseReq): Future[ParseRsp] =

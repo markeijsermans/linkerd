@@ -11,9 +11,9 @@ import com.twitter.util.TimeConversions._
 import io.buoyant.grpc.runtime.ServerDispatcher
 import java.net.InetSocketAddress
 
-class GrpcConfig extends InterfaceConfig {
+class GrpcServerConfig extends InterfaceConfig {
   @JsonIgnore
-  override protected def defaultAddr = GrpcConfig.defaultAddr
+  override protected def defaultAddr = GrpcServerConfig.defaultAddr
 
   @JsonIgnore
   override def mk(
@@ -21,21 +21,20 @@ class GrpcConfig extends InterfaceConfig {
     namers: Map[Path, Namer],
     stats: StatsReceiver
   ): Servable = new Servable {
-    def kind = GrpcConfig.kind
+    def kind = GrpcServerConfig.kind
     def serve() = {
-      val interpreter = GrpcInterpreter.mk(store, namers, stats)
-      // val controller = GrpcController.mk(store)
+      val interpreter = GrpcInterpreter.server(store, namers, stats)
       H2.serve(addr, ServerDispatcher(interpreter))
     }
   }
 }
 
-object GrpcConfig {
+object GrpcServerConfig {
   val kind = "io.l5d.namerd.grpc"
   val defaultAddr = new InetSocketAddress(4321)
 }
 
-class GrpcInitializer extends InterfaceInitializer {
-  override val configId = GrpcConfig.kind
-  override val configClass = classOf[GrpcConfig]
+class GrpcServerInitializer extends InterfaceInitializer {
+  override val configId = GrpcServerConfig.kind
+  override val configClass = classOf[GrpcServerConfig]
 }
