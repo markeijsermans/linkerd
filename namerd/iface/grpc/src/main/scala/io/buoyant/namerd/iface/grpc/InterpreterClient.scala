@@ -13,7 +13,7 @@ import io.buoyant.namer.ConfiguredDtabNamer
 import io.buoyant.proto.BoundNameTree
 import io.buoyant.proto.namerd.{Interpreter => ProtoInterpreter, BoundTreeRsp}
 
-class InterpreterClient {
+object InterpreterClient {
   import InterpreterProto._
 
   def apply(client: ProtoInterpreter, namespace: String): NameInterpreter =
