@@ -14,7 +14,7 @@ object InterpreterServer {
   import InterpreterProto._
 
   def apply(store: DtabStore, namers: Map[Path, Namer], stats: StatsReceiver): Interpreter.Server =
-    new Interpreter.Server(ServerIface(store, namers, stats))
+    new Interpreter.Server(Iface(store, namers, stats))
 
   private[this] val DefaultNamer: (Path, Namer) = Path.empty -> Namer.global
 

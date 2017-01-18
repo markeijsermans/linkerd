@@ -8,7 +8,7 @@ import io.buoyant.grpc.runtime.{Stream, EventStream}
 import io.buoyant.namer.Metadata
 import io.buoyant.proto.{Dtab => ProtoDtab, Path => ProtoPath, _}
 import io.buoyant.proto.namerd.{Addr => ProtoAddr, VersionedDtab => ProtoVersionedDtab, _}
-import java.net.Inet6Address
+import java.net.{InetAddress, Inet6Address, InetSocketAddress}
 
 /**
  * Utilities for translating between io.buoyant.proto and
@@ -147,6 +147,9 @@ private[grpc] object InterpreterProto {
     case Throw(e) => EventStream.End(Return(DtabRspError(e.getMessage, DtabRsp.Error.Code.UNKNOWN)))
   }
 
+  def mkBindReq(ns: String, path: Path, dtab: Dtab): BindReq =
+    BindReq(Some(ns), Some(toProtoPath(path)), Some(toProtoDtab(dtab)))
+
   def BoundTreeRspError(desc: String, code: BoundTreeRsp.Error.Code.Value) = {
     val error = BoundTreeRsp.Error(Some(desc), Some(code))
     BoundTreeRsp(Some(BoundTreeRsp.OneofResult.Error(error)))
@@ -158,21 +161,53 @@ private[grpc] object InterpreterProto {
   val BoundTreeRspNoName =
     BoundTreeRspError("No name given", BoundTreeRsp.Error.Code.BAD_REQUEST)
 
+  private[this] val BoundTreeNeg = BoundNameTree.OneofNode.Nop(BoundNameTree.Nop.NEG)
+  private[this] val BoundTreeFail = BoundNameTree.OneofNode.Nop(BoundNameTree.Nop.FAIL)
+  private[this] val BoundTreeEmpty = BoundNameTree.OneofNode.Nop(BoundNameTree.Nop.EMPTY)
+
+  def mkFromProtoBoundNameTree(bindAddr: Path => Var[Addr]): BoundNameTree => NameTree[Name.Bound] = {
+    def bindTree(ptree: BoundNameTree): NameTree[Name.Bound] = ptree.node match {
+      case Some(BoundTreeNeg) => NameTree.Neg
+      case Some(BoundTreeFail) => NameTree.Fail
+      case Some(BoundTreeEmpty) => NameTree.Empty
+
+      case Some(BoundNameTree.OneofNode.Leaf(BoundNameTree.Leaf(Some(pid), Some(ppath)))) =>
+        val id = fromProtoPath(pid)
+        val path = fromProtoPath(ppath)
+        NameTree.Leaf(Name.Bound(bindAddr(id), id, path))
+
+      case Some(BoundNameTree.OneofNode.Alt(BoundNameTree.Alt(ptrees))) =>
+        val trees = ptrees.map(bindTree)
+        NameTree.Alt(trees: _*)
+
+      case Some(BoundNameTree.OneofNode.Union(BoundNameTree.Union(pwtrees))) =>
+        val wtrees = pwtrees.collect {
+          case BoundNameTree.Union.Weighted(Some(w), Some(t)) =>
+            NameTree.Weighted(w, bindTree(t))
+        }
+        NameTree.Union(wtrees: _*)
+
+      case Some(tree) => throw new IllegalArgumentException(s"Illegal bound tree: $tree")
+      case None => throw new IllegalArgumentException("No bound tree")
+    }
+    bindTree _
+  }
+
+  private[this] val toProtoBoundWeightedTree: NameTree.Weighted[Name.Bound] => BoundNameTree.Union.Weighted =
+    wt => BoundNameTree.Union.Weighted(Some(wt.weight), Some(toProtoBoundNameTree(wt.tree)))
+
   val toProtoBoundNameTree: NameTree[Name.Bound] => BoundNameTree = { tree =>
     val ptree = tree match {
-      case NameTree.Neg =>
-        BoundNameTree.OneofNode.Nop(BoundNameTree.Nop.NEG)
-
-      case NameTree.Fail =>
-        BoundNameTree.OneofNode.Nop(BoundNameTree.Nop.FAIL)
-
-      case NameTree.Empty =>
-        BoundNameTree.OneofNode.Nop(BoundNameTree.Nop.EMPTY)
+      case NameTree.Neg => BoundTreeNeg
+      case NameTree.Fail => BoundTreeFail
+      case NameTree.Empty => BoundTreeEmpty
 
       case NameTree.Leaf(name) =>
         name.id match {
           case id: Path =>
-            val leaf = BoundNameTree.Leaf(Some(toProtoPath(id)), Some(toProtoPath(name.path)))
+            val pid = toProtoPath(id)
+            val ppath = toProtoPath(name.path)
+            val leaf = BoundNameTree.Leaf(Some(pid), Some(ppath))
             BoundNameTree.OneofNode.Leaf(leaf)
 
           case _ =>
@@ -180,16 +215,15 @@ private[grpc] object InterpreterProto {
         }
 
       case NameTree.Alt(trees@_*) =>
-        BoundNameTree.OneofNode.Alt(BoundNameTree.Alt(trees.map(toProtoBoundNameTree)))
+        val ptrees = trees.map(toProtoBoundNameTree)
+        BoundNameTree.OneofNode.Alt(BoundNameTree.Alt(ptrees))
 
       case NameTree.Union(trees@_*) =>
-        BoundNameTree.OneofNode.Union(BoundNameTree.Union(trees.map(toProtoBoundWeightedTree)))
+        val ptrees = trees.map(toProtoBoundWeightedTree)
+        BoundNameTree.OneofNode.Union(BoundNameTree.Union(ptrees))
     }
     BoundNameTree(Some(ptree))
   }
-
-  val toProtoBoundWeightedTree: NameTree.Weighted[Name.Bound] => BoundNameTree.Union.Weighted =
-    wt => BoundNameTree.Union.Weighted(Some(wt.weight), Some(toProtoBoundNameTree(wt.tree)))
 
   val toProtoBoundTreeRsp: NameTree[Name.Bound] => BoundTreeRsp =
     t => BoundTreeRsp(Some(BoundTreeRsp.OneofResult.Tree(toProtoBoundNameTree(t))))
@@ -199,7 +233,17 @@ private[grpc] object InterpreterProto {
     case Throw(e) => EventStream.End(Throw(e))
   }
 
-  private[this] val _collectEndpoint: PartialFunction[Address, Endpoint] = {
+  private[this] val _collectFromEndpoint: PartialFunction[Endpoint, Address] = {
+    case Endpoint(Some(_), Some(ipBuf), Some(port), pmeta) =>
+      val ipBytes = Buf.ByteArray.Owned.extract(ipBuf)
+      val ip = InetAddress.getByAddress(ipBytes)
+      val meta = Seq.empty[(String, Any)] ++
+        pmeta.flatMap(_.authority).map(Metadata.authority -> _) ++
+        pmeta.flatMap(_.nodeName).map(Metadata.nodeName -> _)
+      Address.Inet(new InetSocketAddress(ip, port), Addr.Metadata(meta: _*))
+  }
+
+  private[this] val _collectToEndpoint: PartialFunction[Address, Endpoint] = {
     case Address.Inet(isa, meta) =>
       val port = isa.getPort
       val pmeta = Endpoint.Meta(
@@ -224,25 +268,42 @@ private[grpc] object InterpreterProto {
       }
   }
 
+  def mkAddrReq(id: Path): AddrReq =
+    AddrReq(Some(toProtoPath(id)))
+
   def AddrError(msg: String): ProtoAddr =
     ProtoAddr(Some(ProtoAddr.OneofResult.Failed(ProtoAddr.Failed(Some(msg)))))
 
   val AddrErrorNoId = AddrError("No ID provided")
 
+  private[this] val AddrPending = ProtoAddr.OneofResult.Pending(ProtoAddr.Pending())
+  private[this] val AddrNeg = ProtoAddr.OneofResult.Neg(ProtoAddr.Neg())
   val toProtoAddrResult: Addr => ProtoAddr.OneofResult = {
-    case Addr.Pending =>
-      ProtoAddr.OneofResult.Pending(ProtoAddr.Pending())
-
-    case Addr.Neg =>
-      ProtoAddr.OneofResult.Neg(ProtoAddr.Neg())
+    case Addr.Pending => AddrPending
+    case Addr.Neg => AddrNeg
 
     case Addr.Failed(exc) =>
       ProtoAddr.OneofResult.Failed(ProtoAddr.Failed(Option(exc.getMessage)))
 
     case Addr.Bound(addrs, meta) =>
       val pmeta = ProtoAddr.Bound.Meta(authority = meta.get(Metadata.authority).map(_.toString))
-      val bound = ProtoAddr.Bound(addrs.collect(_collectEndpoint).toSeq, Some(pmeta))
+      val bound = ProtoAddr.Bound(addrs.collect(_collectToEndpoint).toSeq, Some(pmeta))
       ProtoAddr.OneofResult.Bound(bound)
+  }
+
+  val fromProtoAddr: ProtoAddr => Addr = {
+    case ProtoAddr(None) => Addr.Neg
+    case ProtoAddr(Some(result)) => result match {
+      case ProtoAddr.OneofResult.Pending(_) => Addr.Pending
+      case ProtoAddr.OneofResult.Neg(_) => Addr.Neg
+      case ProtoAddr.OneofResult.Failed(ProtoAddr.Failed(msg)) =>
+        Addr.Failed(msg.getOrElse("No error message provided"))
+      case ProtoAddr.OneofResult.Bound(ProtoAddr.Bound(paddrs, pmeta)) =>
+        val addrs = paddrs.collect(_collectFromEndpoint)
+        val meta = Seq.empty[(String, Any)] ++
+          pmeta.flatMap(_.authority).map(Metadata.authority -> _)
+        Addr.Bound(addrs.toSet, Addr.Metadata(meta: _*))
+    }
   }
 
   val toProtoAddr: Addr => ProtoAddr =
