@@ -17,8 +17,8 @@ service Interpreter {
   rpc GetBoundTree (BindReq) returns (BoundTreeRsp) {}
   rpc StreamBoundTree (BindReq) returns (stream BoundTreeRsp) {}
 
-  // rpc GetAddr (AddrReq) returns (AddrRsp) {}
-  // rpc StreamAddr (AddrReq) returns (stream AddrRsp) {}
+  rpc GetAddr (AddrReq) returns (Addr) {}
+  rpc StreamAddr (AddrReq) returns (stream Addr) {}
 
   // rpc GetExplainedTree (ExplainTreeReq) returns (ExplainTreeRsp) {}
   // rpc StreamExplainedTree (ExplainTreeReq) returns (stream ExplainTreeRsp) {}
@@ -115,6 +115,69 @@ message BoundTreeRsp {
   }
 }
 
-//TODO
-// service Controller {
-// }
+/*
+ * GetAddr, StreamAddr
+ */
+
+message AddrReq {
+  Path id = 1;
+}
+
+message Endpoint {
+
+  enum AddressFamily {
+    INET4 = 0;
+    INET6 = 1;
+  }
+  AddressFamily family = 1;
+
+  /** An opaque address (according to family). */
+  bytes address = 2;
+
+  int32 port = 3;
+
+  /** Endpoint-specific metadata */
+  message Meta {
+    /**
+     * Suggested HTTP authority to be used for inbound requests.
+     */
+    string authority = 1;  
+
+    /**
+     * In scheduled environments, a diagnostic name for the parent node.
+     */
+    string nodeName = 2;
+  }
+  Meta meta = 4;
+}
+
+message Addr {
+
+  message Pending {}
+
+  message Neg {}
+
+  message Failed {
+    string message = 1;
+  }
+
+  message Bound {
+    repeated Endpoint endpoints = 1;
+
+    /** Cluster-level metadata */
+    message Meta {
+      /**
+       * Suggested HTTP authority to be used for inbound requests.
+       */
+      string authority = 1;    
+    }
+    Meta meta = 2;
+  }
+
+  oneof result {
+    Pending pending = 1;
+    Neg neg = 2;
+    Failed failed = 3;
+    Bound bound = 4;
+  }
+}

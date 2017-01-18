@@ -2,15 +2,16 @@ package io.buoyant.namerd
 package iface
 
 import com.twitter.concurrent.AsyncQueue
-import com.twitter.finagle.{Dentry, Dtab, Name, Namer, NameTree, Path, Service}
+import com.twitter.finagle.{Addr, Address, Dentry, Dtab, Name, Namer, NameTree, Path, Service}
 import com.twitter.finagle.buoyant.h2
 import com.twitter.finagle.stats.StatsReceiver
 import com.twitter.io.Buf
-import com.twitter.util.{Activity, Closable, Event, Future, Return, Promise, Throw, Try}
+import com.twitter.util.{Activity, Closable, Event, Future, Return, Promise, Throw, Try, Var}
 import io.buoyant.grpc.runtime.{Stream, EventStream}
-import io.buoyant.namer.ConfiguredDtabNamer
+import io.buoyant.namer.{ConfiguredDtabNamer, Metadata}
 import io.buoyant.proto.{Dtab => ProtoDtab, Path => ProtoPath, _}
-import io.buoyant.proto.namerd.{VersionedDtab => ProtoVersionedDtab, _}
+import io.buoyant.proto.namerd.{Addr => ProtoAddr, VersionedDtab => ProtoVersionedDtab, _}
+import java.net.Inet6Address
 import java.nio.ByteBuffer
 import scala.collection.JavaConverters._
 
@@ -93,7 +94,46 @@ object GrpcInterpreter {
       val interpreter = ConfiguredDtabNamer(dtabVar, namers.toSeq)
       interpreter.bind(localDtab, name)
     }
+
+    override def getAddr(req: AddrReq): Future[ProtoAddr] = req.id match {
+      case None => Future.value(AddrErrorNoId)
+      case Some(pid) if pid.elems.isEmpty => Future.value(AddrErrorNoId)
+      case Some(pid) => bindAddr(fromProto(pid)).changes.toFuture.map(mkAddr)
+    }
+
+    override def streamAddr(req: AddrReq): Stream[ProtoAddr] = req.id match {
+      case None => Stream.value(AddrErrorNoId)
+      case Some(pid) if pid.elems.isEmpty => Stream.value(AddrErrorNoId)
+      case Some(pid) => EventStream(bindAddr(fromProto(pid)).map(mkAddrEv))
+    }
+
+    private[this] def bindAddr(id: Path) = {
+      val (pfx, namer) = namers
+        .find { case (pfx, _) => id.startsWith(pfx) }
+        .getOrElse(DefaultNamer)
+
+      namer.bind(NameTree.Leaf(id.drop(pfx.size))).run.flatMap {
+        case Activity.Pending => Var.value(Addr.Pending)
+        case Activity.Failed(e) => Var.value(Addr.Failed(e))
+        case Activity.Ok(tree) => tree match {
+          case NameTree.Leaf(bound) => bound.addr
+          case NameTree.Empty => Var.value(Addr.Bound())
+          case NameTree.Fail => Var.value(Addr.Failed("name tree failed"))
+          case NameTree.Neg => Var.value(Addr.Neg)
+          case NameTree.Alt(_) | NameTree.Union(_) =>
+            Var.value(Addr.Failed(s"${id.show} is not a concrete bound id"))
+        }
+      }
+    }
   }
+
+  private[this] val DefaultNamer: (Path, Namer) = Path.empty -> Namer.global
+
+  /*
+   * Below here is just mechanical transformation between Finagle
+   * types and protobuf (because we're modeling finagle types in
+   * protobuf).
+   */
 
   private[this] val extractDtab: Option[VersionedDtab] => Dtab = {
     case None => Dtab.empty
@@ -274,4 +314,56 @@ object GrpcInterpreter {
     case Return(tree) => EventStream.Val(mkBoundTreeRsp(tree))
     case Throw(e) => EventStream.End(Throw(e))
   }
+
+  private[this] val collectEndpoint: PartialFunction[Address, Endpoint] = {
+    case Address.Inet(isa, meta) =>
+      val port = isa.getPort
+      val pmeta = Endpoint.Meta(
+        authority = meta.get(Metadata.authority).map(_.toString),
+        nodeName = meta.get(Metadata.nodeName).map(_.toString)
+      )
+      isa.getAddress match {
+        case ip: Inet6Address =>
+          Endpoint(
+            Some(Endpoint.AddressFamily.INET6),
+            Some(Buf.ByteArray.Owned(ip.getAddress)),
+            Some(port),
+            Some(pmeta)
+          )
+        case ip =>
+          Endpoint(
+            Some(Endpoint.AddressFamily.INET4),
+            Some(Buf.ByteArray.Owned(ip.getAddress)),
+            Some(port),
+            Some(pmeta)
+          )
+      }
+  }
+
+  private[this] def AddrError(msg: String): ProtoAddr =
+    ProtoAddr(Some(ProtoAddr.OneofResult.Failed(ProtoAddr.Failed(Some(msg)))))
+
+  private[this] val AddrErrorNoId = AddrError("No ID provided")
+
+  private[this] val mkAddrResult: Addr => ProtoAddr.OneofResult = {
+    case Addr.Pending =>
+      ProtoAddr.OneofResult.Pending(ProtoAddr.Pending())
+
+    case Addr.Neg =>
+      ProtoAddr.OneofResult.Neg(ProtoAddr.Neg())
+
+    case Addr.Failed(exc) =>
+      ProtoAddr.OneofResult.Failed(ProtoAddr.Failed(Option(exc.getMessage)))
+
+    case Addr.Bound(addrs, meta) =>
+      val pmeta = ProtoAddr.Bound.Meta(authority = meta.get(Metadata.authority).map(_.toString))
+      val bound = ProtoAddr.Bound(addrs.collect(collectEndpoint).toSeq, Some(pmeta))
+      ProtoAddr.OneofResult.Bound(bound)
+  }
+
+  private[this] val mkAddr: Addr => ProtoAddr =
+    a => ProtoAddr(Some(mkAddrResult(a)))
+
+  private[this] val mkAddrEv: Addr => EventStream.Ev[ProtoAddr] =
+    a => EventStream.Val(mkAddr(a))
 }
