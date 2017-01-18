@@ -1,5 +1,5 @@
 package io.buoyant.namerd
-package iface
+package iface.grpc
 
 import com.twitter.finagle.{Addr, Address, Dentry, Dtab, Name, Namer, NameTree, Path}
 import com.twitter.io.Buf
@@ -17,7 +17,7 @@ import java.net.Inet6Address
  * This is necessary because this particular protobuf service models
  * Finagle primitives.
  */
-private[iface] object GrpcInterpreterProto {
+private[grpc] object InterpreterProto {
 
   val toProtoParseRsp: Try[Dtab] => Future[ParseRsp] = {
     case Return(dtab) =>

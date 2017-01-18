@@ -23,7 +23,7 @@ class GrpcServerConfig extends InterfaceConfig {
   ): Servable = new Servable {
     def kind = GrpcServerConfig.kind
     def serve() = {
-      val interpreter = GrpcInterpreter.server(store, namers, stats)
+      val interpreter = grpc.InterpreterServer(store, namers, stats)
       H2.serve(addr, ServerDispatcher(interpreter))
     }
   }

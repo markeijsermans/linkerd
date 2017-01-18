@@ -1,5 +1,5 @@
 package io.buoyant.namerd
-package iface
+package iface.grpc
 
 import com.twitter.concurrent.AsyncQueue
 import com.twitter.finagle.{Addr, Dtab, Namer, NameTree, Path}
@@ -10,15 +10,15 @@ import io.buoyant.grpc.runtime.{Stream, EventStream}
 import io.buoyant.namer.ConfiguredDtabNamer
 import io.buoyant.proto.namerd.{Addr => ProtoAddr, VersionedDtab => ProtoVersionedDtab, _}
 
-object GrpcInterpreter {
-  import GrpcInterpreterProto._
+object InterpreterServer {
+  import InterpreterProto._
 
-  def server(store: DtabStore, namers: Map[Path, Namer], stats: StatsReceiver): Interpreter.Server =
+  def apply(store: DtabStore, namers: Map[Path, Namer], stats: StatsReceiver): Interpreter.Server =
     new Interpreter.Server(ServerIface(store, namers, stats))
 
   private[this] val DefaultNamer: (Path, Namer) = Path.empty -> Namer.global
 
-  case class ServerIface(store: DtabStore, namers: Map[Path, Namer], stats: StatsReceiver)
+  case class Iface(store: DtabStore, namers: Map[Path, Namer], stats: StatsReceiver)
     extends Interpreter {
 
     override def parse(req: ParseReq): Future[ParseRsp] =
