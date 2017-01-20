@@ -1,6 +1,7 @@
 ## Upcoming Release
 
 * Add `io.l5d.usage` telemeter for opt-in usage data collection
+* Add `roundRobin` as a load balancer option.
 
 ## 0.8.6 2017-01-19
 
