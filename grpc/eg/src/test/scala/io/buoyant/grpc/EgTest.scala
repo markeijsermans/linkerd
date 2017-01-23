@@ -82,7 +82,7 @@ class EgTest extends FunSuite {
 class EgEndToEndTest extends FunSuite {
   import EgTest._
 
-  ignore("unary request and unary response") {
+  test("unary request and unary response") {
     val sentRsp = Eg.Rsp(Some(Eg.Message.Enumeration.THREEFOUR))
     val iface = new Eg.Eggman {
       def uplatu(req: Eg.Req): Future[Eg.Rsp] = Future.value(sentRsp)
@@ -102,7 +102,7 @@ class EgEndToEndTest extends FunSuite {
     } finally await(h2client.close().before(h2srv.close()))
   }
 
-  ignore("unary request and streaming response") {
+  test("unary request and streaming response") {
     val tx = Stream[Eg.Rsp]()
     val iface = new Eg.Eggman {
       def uplatu(req: Eg.Req): Future[Eg.Rsp] = ???
@@ -185,7 +185,7 @@ class EgEndToEndTest extends FunSuite {
     }
   }
 
-  ignore("unary request and failing unary response") {
+  test("unary request and failing unary response") {
     val iface = new Eg.Eggman {
       def uplatu(req: Eg.Req): Future[Eg.Rsp] = Future.exception(GrpcStatus.DeadlineExceeded())
       def uplats(req: Eg.Req): Stream[Eg.Rsp] = ???
@@ -200,11 +200,11 @@ class EgEndToEndTest extends FunSuite {
 
       val req = Eg.Req(Some(Eg.Enumeration.TWO))
       val status = intercept[GrpcStatus] { await(client.uplatu(req)) }
-      assert(status == GrpcStatus.DeadlineExceeded)
+      assert(status == GrpcStatus.DeadlineExceeded(""))
     } finally await(h2client.close().before(h2srv.close()))
   }
 
-  ignore("unary request and failing streaming response") {
+  test("unary request and failing streaming response") {
     val iface = new Eg.Eggman {
       def uplatu(req: Eg.Req): Future[Eg.Rsp] = ???
       def uplats(req: Eg.Req): Stream[Eg.Rsp] = Stream.empty(GrpcStatus.DeadlineExceeded())
