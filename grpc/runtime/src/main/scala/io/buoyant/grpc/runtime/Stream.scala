@@ -1,6 +1,7 @@
 package io.buoyant.grpc.runtime
 
 import com.twitter.concurrent.{AsyncMutex, AsyncQueue}
+import com.twitter.finagle.Failure
 import com.twitter.finagle.buoyant.h2
 import com.twitter.io.Buf
 import com.twitter.util.{Future, Promise, Return, Throw, Try}
@@ -8,23 +9,26 @@ import com.twitter.util.{Future, Promise, Return, Throw, Try}
 trait Stream[+T] {
   def recv(): Future[Stream.Releasable[T]]
 
-  // TODO support grpc error types
-  // def reset(err: Grpc.Error): Unit
+  def reset(err: GrpcStatus): Unit
 }
 
 object Stream {
 
   case class Releasable[+T](value: T, release: () => Future[Unit])
 
-  trait Tx[-T] {
+  trait Provider[-T] {
     def send(t: T): Future[Unit]
 
     def close(): Future[Unit]
   }
 
-  def apply[T](): Stream[T] with Tx[T] = new Stream[T] with Tx[T] {
+  def apply[T](): Stream[T] with Provider[T] = new Stream[T] with Provider[T] {
     // TODO bound queue? not strictly necessary if send() future observed...
     private[this] val q = new AsyncQueue[Releasable[T]]
+
+    override def reset(e: GrpcStatus): Unit = {
+      q.fail(e, discard = true)
+    }
 
     override def recv(): Future[Releasable[T]] = q.poll()
 
@@ -35,17 +39,19 @@ object Stream {
         Future.Unit
       }
       if (q.offer(Releasable(msg, release))) p
-      else Future.exception(Rejected)
+      else Future.exception(Failure("rejected", Failure.Rejected))
     }
 
     override def close(): Future[Unit] = {
-      q.fail(Closed, discard = false)
+      q.fail(GrpcStatus.Ok(), discard = false)
       Future.Unit
     }
   }
 
-  object Closed extends Throwable
-  object Rejected extends Throwable
+  def empty(status: GrpcStatus): Stream[Nothing] = new Stream[Nothing] {
+    override def reset(e: GrpcStatus): Unit = ()
+    override def recv(): Future[Releasable[Nothing]] = Future.exception(status)
+  }
 
   /**
    * A stream that defers results until the provided future is
@@ -76,23 +82,43 @@ object Stream {
       // (which isn't guaranteed without it).
       private[this] val recvMu = new AsyncMutex()
 
-      @volatile private[this] var streamRef: Either[Future[Stream[T]], Try[Stream[T]]] = Left(streamFut)
+      private[this] var streamRef: Either[Future[Stream[T]], Try[Stream[T]]] = Left(streamFut)
 
-      private[this] val _recv: Try[Stream[T]] => Future[Stream.Releasable[T]] = { v =>
-        streamRef = Right(v)
-        v match {
-          case Return(stream) => stream.recv()
-          case Throw(e) => Future.exception(e)
+      def reset(e: GrpcStatus): Unit = synchronized {
+        streamRef match {
+          case Right(_) =>
+          case Left(f) =>
+            f.raise(Failure(e, Failure.Interrupted))
         }
+        streamRef = Right(Throw(e))
       }
 
       override def recv(): Future[Stream.Releasable[T]] =
         recvMu.acquireAndRun {
-          streamRef match {
-            case Left(f) => f.transform(_recv)
-            case Right(Return(stream)) => stream.recv()
-            case Right(Throw(e)) => Future.exception(e)
+          synchronized {
+            streamRef match {
+              case Left(f) => f.transform(_recv) // first time through
+              case Right(Return(s)) => s.recv()
+              case Right(Throw(e)) => Future.exception(e)
+            }
           }
         }
+
+      private[this] val _recv: Try[Stream[T]] => Future[Stream.Releasable[T]] = { v =>
+        val ret = synchronized {
+          streamRef match {
+            case Right(reset) =>
+              // If something has happened to update this, just use that update
+              reset
+            case Left(_) =>
+              streamRef = Right(v)
+              v
+          }
+        }
+        ret match {
+          case Return(s) => s.recv()
+          case Throw(e) => Future.exception(e)
+        }
+      }
     }
 }
